@@ -116,15 +116,15 @@ def create_app() -> FastAPI:
     # --- Routers ---
     from app.api.search import router as search_router
     from app.api.auth import router as auth_router
+    from app.api.admin_stores import router as admin_stores_router
 
     app.include_router(search_router, prefix="/api")
     app.include_router(auth_router, prefix="/api/auth")
+    app.include_router(admin_stores_router, prefix="/api/admin")
 
     # Registered as tasks are completed:
-    # from app.api.admin_stores import router as admin_stores_router
     # from app.api.admin_import import router as admin_import_router
     # from app.api.admin_users import router as admin_users_router
-    # app.include_router(admin_stores_router, prefix="/api/admin")
     # app.include_router(admin_import_router, prefix="/api/admin")
     # app.include_router(admin_users_router, prefix="/api/admin")
 
