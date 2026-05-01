@@ -11,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base, get_db
 from app.main import app
 from app.middleware.rate_limit import limiter
+from app.services.auth import create_access_token
 
 
 # SQLite needs this pragma to enforce FK constraints (off by default)
@@ -76,3 +77,36 @@ def client(db_engine) -> TestClient:
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+# ---------- Auth helpers ----------
+
+@pytest.fixture()
+def seeded_db(db_session):
+    """Seed roles, permissions, and the three test users into the in-memory DB."""
+    from scripts.seed import seed_roles_and_permissions, seed_users
+    role_map = seed_roles_and_permissions(db_session)
+    seed_users(db_session, role_map)
+    db_session.commit()
+    return db_session
+
+
+def auth_headers(user_id: str, email: str, role: str) -> dict:
+    """Return Authorization headers for a given user — no DB needed."""
+    token = create_access_token(user_id, email, role)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def admin_headers():
+    return auth_headers("U001", "admin@test.com", "admin")
+
+
+@pytest.fixture()
+def marketer_headers():
+    return auth_headers("U002", "marketer@test.com", "marketer")
+
+
+@pytest.fixture()
+def viewer_headers():
+    return auth_headers("U003", "viewer@test.com", "viewer")
