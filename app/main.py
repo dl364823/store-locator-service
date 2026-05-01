@@ -4,10 +4,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
 from app.exceptions import StoreLocatorError
 from app.logging_config import setup_logging
+from app.middleware.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +32,10 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
+    # Wire slowapi limiter into the app state so decorators can access it
+    app.state.limiter = limiter
+    app.add_middleware(SlowAPIMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -35,6 +43,21 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # --- Exception handlers (most-specific first) ---
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many requests. Please slow down and try again.",
+                }
+            },
+            headers={"Retry-After": "60"},
+        )
 
     @app.exception_handler(StoreLocatorError)
     async def store_locator_error_handler(
@@ -54,15 +77,11 @@ def create_app() -> FastAPI:
     async def request_validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        # Normalize Pydantic/FastAPI validation errors to our error envelope
         errors = [
             {"field": ".".join(str(loc) for loc in e["loc"]), "message": e["msg"]}
             for e in exc.errors()
         ]
-        logger.warning(
-            "Request validation failed",
-            extra={"path": str(request.url.path), "errors": errors},
-        )
+        logger.warning("Request validation failed", extra={"path": str(request.url.path)})
         return JSONResponse(
             status_code=422,
             content={
@@ -78,10 +97,7 @@ def create_app() -> FastAPI:
     async def unhandled_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
-        # Log full traceback internally; never expose it to the caller
-        logger.exception(
-            "Unhandled exception on %s", request.url.path
-        )
+        logger.exception("Unhandled exception on %s", request.url.path)
         return JSONResponse(
             status_code=500,
             content={
@@ -92,23 +108,25 @@ def create_app() -> FastAPI:
             },
         )
 
-    # ---------- Health check ----------
-    @app.get(
-        "/health",
-        tags=["Health"],
-        summary="Health check",
-        response_description="Service health status",
-    )
+    # --- Health check ---
+    @app.get("/health", tags=["Health"], summary="Health check")
     async def health_check() -> dict:
         return {"status": "healthy", "version": "1.0.0"}
 
-    # Routers are registered here as they are built in later tasks
-    # from app.api import search, auth, admin_stores, admin_import, admin_users
-    # app.include_router(search.router, prefix="/api")
-    # app.include_router(auth.router, prefix="/api/auth")
-    # app.include_router(admin_stores.router, prefix="/api/admin")
-    # app.include_router(admin_import.router, prefix="/api/admin")
-    # app.include_router(admin_users.router, prefix="/api/admin")
+    # --- Routers ---
+    from app.api.search import router as search_router
+
+    app.include_router(search_router, prefix="/api")
+
+    # Registered as tasks are completed:
+    # from app.api.auth import router as auth_router
+    # from app.api.admin_stores import router as admin_stores_router
+    # from app.api.admin_import import router as admin_import_router
+    # from app.api.admin_users import router as admin_users_router
+    # app.include_router(auth_router, prefix="/api/auth")
+    # app.include_router(admin_stores_router, prefix="/api/admin")
+    # app.include_router(admin_import_router, prefix="/api/admin")
+    # app.include_router(admin_users_router, prefix="/api/admin")
 
     return app
 
