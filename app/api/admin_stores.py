@@ -24,12 +24,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stores", tags=["Admin — Stores"])
 
+_ERR = {"application/json": {"example": {"error": {"code": "ERROR_CODE", "message": "Description"}}}}
+
 
 @router.post(
     "",
     response_model=StoreResponse,
     status_code=201,
     summary="Create store",
+    responses={
+        401: {"description": "Missing or invalid token", "content": _ERR},
+        403: {"description": "Insufficient permissions (requires stores:write)", "content": _ERR},
+        409: {"description": "store_id already exists", "content": _ERR},
+        422: {"description": "Validation error", "content": _ERR},
+    },
 )
 def create(
     body: StoreCreateRequest,
@@ -73,9 +81,17 @@ def get_one(
     response_model=StoreResponse,
     summary="Partial update store",
     description=(
-        "Update allowed fields only: name, phone, services, status, hours. "
-        "Disallowed fields (store_id, latitude, longitude, address_*) are rejected."
+        "Update allowed fields only: `name`, `phone`, `services`, `status`, `hours`.\n\n"
+        "Disallowed fields (`store_id`, `latitude`, `longitude`, `address_*`) are **rejected with 422**.\n\n"
+        "`hours` is a partial merge — only days included in the payload are updated."
     ),
+    responses={
+        400: {"description": "Empty request body", "content": _ERR},
+        401: {"description": "Missing or invalid token", "content": _ERR},
+        403: {"description": "Insufficient permissions", "content": _ERR},
+        404: {"description": "Store not found", "content": _ERR},
+        422: {"description": "Disallowed field or validation error", "content": _ERR},
+    },
 )
 def patch(
     store_id: str,

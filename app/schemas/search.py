@@ -1,6 +1,6 @@
 import re
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import get_settings
 
@@ -9,16 +9,54 @@ _ZIP_RE = re.compile(r"^\d{5}$")
 
 class SearchRequest(BaseModel):
     # --- location input: exactly one mode must be used ---
-    latitude: float | None = None
-    longitude: float | None = None
-    address: str | None = None
-    postal_code: str | None = None
+    latitude: float | None = Field(
+        None,
+        description="Search latitude (-90 to 90). Must be provided with longitude.",
+        examples=[42.3601],
+    )
+    longitude: float | None = Field(
+        None,
+        description="Search longitude (-180 to 180). Must be provided with latitude.",
+        examples=[-71.0589],
+    )
+    address: str | None = Field(
+        None,
+        description="Free-text address to geocode (Nominatim). Mutually exclusive with other location modes.",
+        examples=["100 Cambridge St, Boston, MA"],
+    )
+    postal_code: str | None = Field(
+        None,
+        description="5-digit US ZIP code. Mutually exclusive with other location modes.",
+        examples=["02114"],
+    )
 
     # --- filters ---
-    radius_miles: float = 10.0
-    services: list[str] = []
-    store_types: list[str] = []
-    open_now: bool = False
+    radius_miles: float = Field(
+        10.0,
+        description="Search radius in miles. Must be > 0 and ≤ 100.",
+        examples=[10.0],
+    )
+    services: list[str] = Field(
+        [],
+        description=(
+            "AND filter — store must have ALL listed services. "
+            "Allowed: pharmacy, pickup, returns, optical, photo_printing, "
+            "gift_wrapping, automotive, garden_center."
+        ),
+        examples=[["pharmacy", "pickup"]],
+    )
+    store_types: list[str] = Field(
+        [],
+        description="OR filter — store matches ANY listed type. Allowed: flagship, regular, outlet, express.",
+        examples=[["regular", "flagship"]],
+    )
+    open_now: bool = Field(
+        False,
+        description=(
+            "When true, return only stores currently open (compared in UTC). "
+            "Results with open_now=true are never cached."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_location_mode(self) -> "SearchRequest":
@@ -82,48 +120,50 @@ class SearchRequest(BaseModel):
 # --- Response schemas ---
 
 class StoreHours(BaseModel):
-    mon: str | None
-    tue: str | None
-    wed: str | None
-    thu: str | None
-    fri: str | None
-    sat: str | None
-    sun: str | None
+    mon: str | None = Field(None, examples=["08:00-22:00"])
+    tue: str | None = Field(None, examples=["08:00-22:00"])
+    wed: str | None = Field(None, examples=["08:00-22:00"])
+    thu: str | None = Field(None, examples=["08:00-22:00"])
+    fri: str | None = Field(None, examples=["08:00-23:00"])
+    sat: str | None = Field(None, examples=["09:00-23:00"])
+    sun: str | None = Field(None, examples=["10:00-20:00"])
 
 
 class StoreSearchResult(BaseModel):
-    store_id: str
-    name: str
-    store_type: str
-    status: str
-    latitude: float
-    longitude: float
-    address_street: str
-    address_city: str
-    address_state: str
-    address_postal_code: str
-    address_country: str
-    phone: str
-    services: list[str]
+    store_id: str = Field(..., examples=["S0001"])
+    name: str = Field(..., examples=["Boston Downtown Store"])
+    store_type: str = Field(..., examples=["flagship"])
+    status: str = Field(..., examples=["active"])
+    latitude: float = Field(..., examples=[42.3555])
+    longitude: float = Field(..., examples=[-71.0602])
+    address_street: str = Field(..., examples=["100 Cambridge St"])
+    address_city: str = Field(..., examples=["Boston"])
+    address_state: str = Field(..., examples=["MA"])
+    address_postal_code: str = Field(..., examples=["02114"])
+    address_country: str = Field(..., examples=["USA"])
+    phone: str = Field(..., examples=["617-555-0100"])
+    services: list[str] = Field(..., examples=[["pharmacy", "pickup", "optical"]])
     hours: StoreHours
-    distance_miles: float
-    is_open_now: bool
+    distance_miles: float = Field(
+        ..., description="Haversine distance in miles from search location", examples=[0.3]
+    )
+    is_open_now: bool = Field(..., description="Whether the store is currently open (UTC)")
 
 
 class SearchLocation(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., examples=[42.3601])
+    longitude: float = Field(..., examples=[-71.0589])
 
 
 class FiltersApplied(BaseModel):
-    radius_miles: float
-    services: list[str]
-    store_types: list[str]
-    open_now: bool
+    radius_miles: float = Field(..., examples=[10.0])
+    services: list[str] = Field(..., examples=[[]])
+    store_types: list[str] = Field(..., examples=[[]])
+    open_now: bool = Field(..., examples=[False])
 
 
 class SearchResponse(BaseModel):
     results: list[StoreSearchResult]
-    count: int
+    count: int = Field(..., description="Number of stores returned", examples=[5])
     search_location: SearchLocation
     filters_applied: FiltersApplied

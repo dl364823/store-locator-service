@@ -13,14 +13,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Search"])
 
 
+_ERROR = {"application/json": {"example": {"error": {"code": "ERROR_CODE", "message": "Description"}}}}
+
 @router.post(
     "/stores/search",
     response_model=SearchResponse,
     summary="Search for stores",
     description=(
         "Search stores by coordinates, address, or postal code. "
-        "Returns active stores within the specified radius, sorted by distance."
+        "Returns **active** stores within the specified radius, sorted by distance (nearest first). "
+        "Results cached for 5 minutes (except `open_now=true` searches)."
     ),
+    responses={
+        400: {"description": "Address/ZIP not found", "content": _ERROR},
+        422: {"description": "Validation error (invalid coordinates, radius, filters)", "content": _ERROR},
+        429: {"description": "Rate limit exceeded (10/min or 100/hour per IP)", "content": _ERROR},
+        502: {"description": "Geocoding service unavailable", "content": _ERROR},
+    },
 )
 @limiter.limit("100/hour")
 @limiter.limit("10/minute")

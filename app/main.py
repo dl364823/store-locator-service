@@ -4,7 +4,6 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -15,6 +14,88 @@ from app.middleware.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
+# OpenAPI tag groups — controls sidebar order in Swagger UI
+_TAGS = [
+    {
+        "name": "Health",
+        "description": "Service health and readiness check.",
+    },
+    {
+        "name": "Search",
+        "description": (
+            "**Public** store search. Rate-limited to **10 req/min** and "
+            "**100 req/hour** per IP. No authentication required."
+        ),
+    },
+    {
+        "name": "Auth",
+        "description": (
+            "JWT two-token authentication.\n\n"
+            "**Flow:** `POST /login` → receive `access_token` (15 min) + `refresh_token` (7 days). "
+            "Send `access_token` as `Authorization: Bearer <token>` on protected endpoints. "
+            "Use `POST /refresh` to obtain a new access token without re-logging in. "
+            "`POST /logout` revokes the refresh token."
+        ),
+    },
+    {
+        "name": "Admin — Stores",
+        "description": (
+            "Authenticated store management (CRUD + PATCH).\n\n"
+            "**Required permission:** `stores:read` (GET) or `stores:write` (POST/PATCH/DELETE).\n\n"
+            "PATCH only accepts: `name`, `phone`, `services`, `status`, `hours`. "
+            "Attempts to update `store_id`, coordinates, or address fields are rejected."
+        ),
+    },
+    {
+        "name": "Admin — Import",
+        "description": (
+            "Bulk CSV import (upsert). **Required permission:** `import:write`.\n\n"
+            "The import is **all-or-nothing**: if any row fails validation, nothing is written. "
+            "Existing `store_id`s are updated; new ones are created."
+        ),
+    },
+    {
+        "name": "Admin — Users",
+        "description": (
+            "User management. **Admin only** (`users:read` / `users:write`).\n\n"
+            "Soft delete only — users are deactivated, never physically removed."
+        ),
+    },
+]
+
+_DESCRIPTION = """
+## Store Locator API
+
+Production-ready store search and management service for a multi-location retail business.
+
+### Public endpoints
+- `POST /api/stores/search` — find nearby stores by coordinates, address, or ZIP code
+
+### Authenticated endpoints (JWT Bearer token required)
+All `/api/auth/*` and `/api/admin/*` endpoints require a valid access token.
+
+### Role-based access
+| Role | Permissions |
+|------|-------------|
+| **admin** | Full access to all endpoints |
+| **marketer** | Store management + CSV import |
+| **viewer** | Read-only store access |
+
+### Error format
+All errors use a consistent envelope:
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
+
+### Distance calculation
+Bounding-box pre-filter (SQL) → exact Haversine distance (geopy) → sorted by nearest first.
+"""
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -22,17 +103,15 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Store Locator API",
-        description=(
-            "Production-ready Store Locator service supporting public store search "
-            "and authenticated store management with role-based access control."
-        ),
+        description=_DESCRIPTION,
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        openapi_tags=_TAGS,
+        contact={"name": "Store Locator", "email": "admin@test.com"},
     )
 
-    # Wire slowapi limiter into the app state so decorators can access it
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
 
@@ -109,7 +188,13 @@ def create_app() -> FastAPI:
         )
 
     # --- Health check ---
-    @app.get("/health", tags=["Health"], summary="Health check")
+    @app.get(
+        "/health",
+        tags=["Health"],
+        summary="Health check",
+        response_description="Returns service status and version",
+        responses={200: {"content": {"application/json": {"example": {"status": "healthy", "version": "1.0.0"}}}}},
+    )
     async def health_check() -> dict:
         return {"status": "healthy", "version": "1.0.0"}
 

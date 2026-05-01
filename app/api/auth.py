@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Auth"])
 
+_ERR = {"application/json": {"example": {"error": {"code": "ERROR_CODE", "message": "Description"}}}}
+
 # Generic message used for ALL login failures — never reveal whether email exists
 _INVALID_CREDENTIALS_MSG = "Invalid email or password."
 
@@ -34,7 +36,15 @@ _INVALID_CREDENTIALS_MSG = "Invalid email or password."
     "/login",
     response_model=TokenResponse,
     summary="Login",
-    description="Authenticate with email and password. Returns access + refresh tokens.",
+    description=(
+        "Authenticate with email and password. Returns a short-lived **access token** (15 min) "
+        "and a long-lived **refresh token** (7 days). "
+        "Both wrong-email and wrong-password return the same generic 401 to prevent user enumeration."
+    ),
+    responses={
+        401: {"description": "Invalid credentials or inactive account", "content": _ERR},
+        422: {"description": "Validation error", "content": _ERR},
+    },
 )
 def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user: User | None = db.query(User).filter_by(email=body.email).first()
