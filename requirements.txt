@@ -12,6 +12,7 @@ python-multipart==0.0.17
 cachetools==5.5.0
 slowapi==0.1.9
 limits==3.13.0
+redis==5.2.1
 pytest==8.3.4
 pytest-cov==6.0.0
 httpx==0.28.0

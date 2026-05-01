@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.cache.backend import get_search_cache
 from app.db.models import Store, StoreService
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.schemas.store import StoreCreateRequest, StorePatchRequest, StoreResponse, StoreHours
@@ -81,6 +82,7 @@ def create_store(db: Session, data: StoreCreateRequest) -> StoreResponse:
     _replace_services(db, data.store_id, data.services)
     db.commit()
     db.refresh(store)
+    get_search_cache().clear()
     return _to_response(store)
 
 
@@ -136,6 +138,8 @@ def patch_store(db: Session, store_id: str, data: StorePatchRequest) -> StoreRes
 
     db.commit()
     db.refresh(store)
+    # Any cached search results are now stale
+    get_search_cache().clear()
     return _to_response(store)
 
 
@@ -144,4 +148,6 @@ def deactivate_store(db: Session, store_id: str) -> dict:
     # Idempotent: already inactive stores are silently accepted
     store.status = "inactive"
     db.commit()
+    # Deactivated store must disappear from cached search results
+    get_search_cache().clear()
     return {"message": f"Store '{store_id}' has been deactivated."}

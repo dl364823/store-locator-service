@@ -2,6 +2,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.cache.backend import get_search_cache
+from app.cache.keys import search_key
 from app.db.models import Store
 from app.schemas.search import (
     FiltersApplied,
@@ -72,6 +74,15 @@ def _to_result(store: Store, distance: float) -> StoreSearchResult:
 def execute_search(db: Session, req: SearchRequest) -> SearchResponse:
     lat, lon = _resolve_coordinates(req)
 
+    # Search result cache — skip for open_now since results change with the clock
+    cache = get_search_cache()
+    cache_key = search_key(lat, lon, req.radius_miles, req.services, req.store_types, req.open_now)
+    if not req.open_now:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            logger.debug("Search cache hit for key %s", cache_key)
+            return cached
+
     min_lat, max_lat, min_lon, max_lon = calculate_bounding_box(lat, lon, req.radius_miles)
     candidates = _query_bbox(db, min_lat, max_lat, min_lon, max_lon, req.store_types)
 
@@ -99,7 +110,7 @@ def execute_search(db: Session, req: SearchRequest) -> SearchResponse:
 
     results = [_to_result(store, dist) for store, dist in within_radius]
 
-    return SearchResponse(
+    response = SearchResponse(
         results=results,
         count=len(results),
         search_location=SearchLocation(latitude=lat, longitude=lon),
@@ -110,3 +121,9 @@ def execute_search(db: Session, req: SearchRequest) -> SearchResponse:
             open_now=req.open_now,
         ),
     )
+
+    # Store in cache (skip open_now results — they're time-sensitive)
+    if not req.open_now:
+        cache.set(cache_key, response)
+
+    return response
