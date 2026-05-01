@@ -8,7 +8,6 @@ import logging
 import sys
 from pathlib import Path
 
-import bcrypt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -17,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config import get_settings
 from app.db.models import Store, StoreService, Role, Permission, User
+from app.services.auth import hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,6 @@ CSV_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
-
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
 
 def _get_or_create_role(db: Session, name: str) -> Role:
     role = db.query(Role).filter_by(name=name).first()

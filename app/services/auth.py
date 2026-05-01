@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 # ---------- Password helpers ----------
 
+def hash_password(password: str) -> str:
+    """bcrypt-hash a plaintext password. Each call produces a unique salt."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
 def verify_password(plain: str, hashed: str) -> bool:
     """Constant-time bcrypt comparison. Returns False on any error."""
     try:
