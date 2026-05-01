@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Numeric, String, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -62,8 +62,7 @@ class StoreService(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     store_id: Mapped[str] = mapped_column(
         String(10),
-        # CASCADE so services are deleted when the store row is deleted (soft-delete
-        # is handled at the application layer; physical deletes only happen in tests)
+        ForeignKey("stores.store_id", ondelete="CASCADE"),
         nullable=False,
     )
     service_name: Mapped[str] = mapped_column(String(50), nullable=False)
